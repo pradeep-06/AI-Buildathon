@@ -96,10 +96,6 @@ function toJiraStory(issue: JiraIssue): BoardStory {
   };
 }
 
-function isAuthError(error: unknown): boolean {
-  return error instanceof Error && /^401\b|^403\b/.test(error.message);
-}
-
 async function lookupCloudId(origin: string): Promise<string | null> {
   try {
     const response = await fetch(`${origin}/_edge/tenant_info`, {
@@ -115,32 +111,26 @@ async function lookupCloudId(origin: string): Promise<string | null> {
   }
 }
 
-async function loadJiraIssues(base: string, headers: Record<string, string>, projectKey: string): Promise<JiraIssue[]> {
-  let issues: JiraIssue[] = [];
-  try {
-    const boards = await requestJson<{ values?: { id: number }[] }>(
-      `${base}/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&maxResults=1`,
-      { headers },
-    );
-    const boardId = boards.values?.[0]?.id;
-    if (boardId) {
-      const page = await requestJson<{ issues?: JiraIssue[] }>(
-        `${base}/rest/agile/1.0/board/${boardId}/issue?maxResults=20&fields=summary,description,status,issuetype`,
-        { headers },
-      );
-      issues = page.issues ?? [];
-    }
-  } catch (error) {
-    if (isAuthError(error)) throw error;
-  }
+function isRetryable(error: unknown): boolean {
+  return error instanceof Error && /^401\b|^403\b|^404\b/.test(error.message);
+}
 
-  if (issues.length > 0) return issues;
+type JiraProject = { key?: string; name?: string };
 
+async function listJiraProjects(base: string, headers: Record<string, string>): Promise<JiraProject[]> {
+  const searched = await requestJson<{ values?: JiraProject[] }>(`${base}/rest/api/3/project/search?maxResults=100`, {
+    headers,
+  });
+  return searched.values ?? [];
+}
+
+async function searchJiraIssues(base: string, headers: Record<string, string>, projectKey: string): Promise<JiraIssue[]> {
+  const jql = `project = ${projectKey} ORDER BY updated DESC`;
   const searched = await requestJson<{ issues?: JiraIssue[] }>(`${base}/rest/api/3/search/jql`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
-      jql: `project = ${projectKey} ORDER BY updated DESC`,
+      jql,
       maxResults: 20,
       fields: ['summary', 'description', 'status', 'issuetype'],
     }),
@@ -170,11 +160,32 @@ export async function fetchJiraStories(connection: JiraConnection): Promise<Boar
 
   for (const base of bases) {
     try {
-      const issues = await loadJiraIssues(base, headers, connection.projectKey);
+      await requestJson(`${base}/rest/api/3/myself`, { headers });
+      let projects: JiraProject[] = [];
+      try {
+        projects = await listJiraProjects(base, headers);
+      } catch (error) {
+        if (!isRetryable(error)) throw error;
+        const issues = await searchJiraIssues(base, headers, connection.projectKey);
+        return issues.map(toJiraStory).filter((story) => story.id || story.key);
+      }
+      const match = projects.find((project) => project.key?.toUpperCase() === connection.projectKey.toUpperCase());
+      if (!match?.key) {
+        const visible = projects
+          .map((project) => (project.name ? `${project.key} (${project.name})` : project.key))
+          .filter((label): label is string => Boolean(label))
+          .slice(0, 12);
+        throw new Error(
+          visible.length
+            ? `Jira is connected, but there is no project ${connection.projectKey}. This token can see: ${visible.join(', ')}.`
+            : `Jira is connected, but this token cannot see any projects. Add the read:jira-work scope, and open project ${connection.projectKey} once in the browser with this same account.`,
+        );
+      }
+      const issues = await searchJiraIssues(base, headers, match.key);
       return issues.map(toJiraStory).filter((story) => story.id || story.key);
     } catch (error) {
       const failure = error instanceof Error ? error : new Error('Jira request failed.');
-      if (!isAuthError(failure)) throw failure;
+      if (!isRetryable(failure)) throw failure;
       const where = base.includes('api.atlassian.com') ? 'Atlassian API' : 'site URL';
       failures.push(`${where}: ${failure.message}`);
     }
