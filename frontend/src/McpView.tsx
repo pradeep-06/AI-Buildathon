@@ -114,8 +114,9 @@ export function McpView({
           <div className="section-head">
             <h2>Jira</h2>
             <p>
-              Use the Atlassian account email and an API token from id.atlassian.com. The site URL is
-              https://your-team.atlassian.net. A scoped token needs the read:jira-work scope.
+              Use the Atlassian account email and the full API token from id.atlassian.com. It starts with ATATT.
+              The site URL is https://your-team.atlassian.net. For a scoped token, choose this Jira site and include
+              read:jira-work.
             </p>
           </div>
           <div className="form-row">

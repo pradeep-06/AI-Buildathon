@@ -99,11 +99,20 @@ async function readError(response: Response): Promise<string> {
   return body.replace(/\s+/g, ' ').slice(0, 400);
 }
 
+export class StoryRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(20000) });
   if (!response.ok) {
     const detail = await readError(response);
-    throw new Error(`${response.status} ${response.statusText}${detail ? `: ${detail}` : ''}`);
+    throw new StoryRequestError(`${response.status} ${response.statusText}${detail ? `: ${detail}` : ''}`, response.status);
   }
   return (await response.json()) as T;
 }
@@ -310,24 +319,35 @@ async function loadJiraStories(base: string, headers: Record<string, string>, co
 
 async function searchJiraIssues(base: string, headers: Record<string, string>, projectKey: string): Promise<JiraIssue[]> {
   const jql = projectJql(projectKey);
-  try {
-    const issues = await postJql(base, headers, jql, STORY_FIELDS);
-    if (issues.length > 0 && issues.some((issue) => !hasSummary(issue))) return enrichJiraIssues(base, headers, issues);
-    return issues;
-  } catch (error) {
-    if (!(error instanceof Error) || !/^400\b/.test(error.message)) throw error;
-    const listed = await postJql(base, headers, jql, ['summary', 'status', 'issuetype'], false);
-    if (listed.length === 0) return listed;
-    return enrichJiraIssues(base, headers, listed);
+  const attempts: { fields: string[]; fieldsByKeys: boolean }[] = [
+    { fields: STORY_FIELDS, fieldsByKeys: true },
+    { fields: ['summary', 'status', 'issuetype'], fieldsByKeys: false },
+    { fields: ['summary'], fieldsByKeys: false },
+  ];
+  let lastError: Error | null = null;
+  for (const attempt of attempts) {
+    try {
+      const issues = await postJql(base, headers, jql, attempt.fields, attempt.fieldsByKeys);
+      if (issues.length > 0 && issues.some((issue) => !hasSummary(issue))) return enrichJiraIssues(base, headers, issues);
+      return issues;
+    } catch (error) {
+      if (!(error instanceof Error) || !/^400\b/.test(error.message)) throw error;
+      lastError = error;
+    }
   }
+  throw lastError ?? new StoryRequestError('Jira rejected the story search.');
+}
+
+function isAuthFailure(error: unknown): boolean {
+  return error instanceof Error && /^401\b|^403\b/.test(error.message);
 }
 
 export async function fetchJiraStories(connection: JiraConnection): Promise<BoardStory[]> {
   const origin = new URL(connection.siteUrl).origin;
   const email = connection.email.trim();
-  const token = cleanToken(connection.token);
+  const token = cleanToken(connection.token).replace(/\s+/g, '');
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token)) {
-    throw new Error(
+    throw new StoryRequestError(
       'The API token field has this site’s cloud id, not an API token. Open id.atlassian.com, create an API token, and paste the value that starts with ATATT.',
     );
   }
@@ -336,52 +356,39 @@ export async function fetchJiraStories(connection: JiraConnection): Promise<Boar
     (base): base is string => Boolean(base),
   );
   const failures: string[] = [];
-  let authenticated = false;
-  const authModes = [
-    { name: 'basic', authorization: `Basic ${basicAuth(email, token)}` },
-    { name: 'bearer', authorization: `Bearer ${token}` },
-  ];
+  const headers = {
+    Authorization: `Basic ${basicAuth(email, token)}`,
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  };
 
   for (const base of bases) {
-    const modes = base.includes('api.atlassian.com') ? authModes : authModes.slice(0, 1);
-    let signedIn = false;
-    let headers: Record<string, string> = {};
-    for (const mode of modes) {
-      headers = {
-        Authorization: mode.authorization,
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      };
+    const where = base.includes('api.atlassian.com') ? 'Atlassian API' : 'site URL';
+    if (where === 'site URL') {
       try {
         await requestJson(`${base}/rest/api/3/myself`, { headers });
-        signedIn = true;
-        break;
       } catch (error) {
         const failure = error instanceof Error ? error : new Error('Jira request failed.');
-        if (!isRetryable(failure)) throw failure;
-        const where = base.includes('api.atlassian.com') ? 'Atlassian API' : 'site URL';
-        failures.push(`${where} ${mode.name}: ${failure.message}`);
+        if (!isAuthFailure(failure) && !isRetryable(failure)) throw failure;
+        failures.push(`${where}: ${failure.message}`);
+        continue;
       }
     }
-    if (!signedIn) continue;
-    authenticated = true;
     try {
       return await loadJiraStories(base, headers, connection);
     } catch (error) {
       const failure = error instanceof Error ? error : new Error('Jira request failed.');
-      if (!isRetryable(failure)) throw failure;
-      failures.push(failure.message);
+      if (!isAuthFailure(failure) && !isRetryable(failure)) throw failure;
+      failures.push(`${where}: ${failure.message}`);
     }
   }
 
-  if (authenticated) {
-    throw new Error(
-      `Jira accepted ${email}, but the story details could not be loaded. ${failures.join(' ')}`.trim(),
-    );
-  }
-
-  throw new Error(
-    `Jira rejected the login for ${email} (token ${tokenSuffix(token)}). Open https://id.atlassian.com/manage-profile/profile and confirm that email is the address on the account. Then create a new API token there, choose ${origin}, include read:jira-work, and paste the full ATATT value into MCP. ${failures.join(' ')}`.trim(),
+  const tokenNote = token.startsWith('ATATT')
+    ? `The full API token was sent (${tokenSuffix(token)}).`
+    : `The saved token does not start with ATATT (${tokenSuffix(token)}).`;
+  throw new StoryRequestError(
+    `Jira refused ${email} for ${origin}. ${tokenNote} Sign in at https://id.atlassian.com/manage-profile/security/api-tokens as that same email, create a token for this Jira site, and include read:jira-work. ${failures.join(' ')}`.trim(),
+    401,
   );
 }
 

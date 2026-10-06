@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import { fetchBoardStories } from './server/stories';
+import { fetchBoardStories, StoryRequestError } from './server/stories';
 
 function readJson(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -34,7 +34,8 @@ function storiesApi(): Plugin {
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ stories }));
         } catch (error) {
-          res.statusCode = 400;
+          const status = error instanceof StoryRequestError ? error.status : 400;
+          res.statusCode = status;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Could not fetch stories.' }));
         }
