@@ -152,6 +152,11 @@ export async function fetchJiraStories(connection: JiraConnection): Promise<Boar
   const origin = new URL(connection.siteUrl).origin;
   const email = connection.email.trim();
   const token = cleanToken(connection.token);
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token)) {
+    throw new Error(
+      'The API token field has this site’s cloud id, not an API token. Open id.atlassian.com, create an API token, and paste the value that starts with ATATT.',
+    );
+  }
   const headers = {
     Authorization: `Basic ${basicAuth(email, token)}`,
     Accept: 'application/json',

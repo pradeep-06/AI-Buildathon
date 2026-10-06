@@ -155,7 +155,7 @@ export function McpView({
                 type="password"
                 value={jira.token}
                 onChange={(event) => setJira({ ...jira, token: event.target.value })}
-                placeholder="Atlassian API token"
+                placeholder="ATATT… from id.atlassian.com"
                 autoComplete="new-password"
               />
             </label>
