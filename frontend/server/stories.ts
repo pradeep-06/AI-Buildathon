@@ -147,20 +147,39 @@ export async function fetchJiraStories(connection: JiraConnection): Promise<Boar
       'The API token field has this site’s cloud id, not an API token. Open id.atlassian.com, create an API token, and paste the value that starts with ATATT.',
     );
   }
-  const headers = {
-    Authorization: `Basic ${basicAuth(email, token)}`,
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-  };
   const cloudId = await lookupCloudId(origin);
   const bases = [cloudId ? `https://api.atlassian.com/ex/jira/${cloudId}` : null, origin].filter(
     (base): base is string => Boolean(base),
   );
   const failures: string[] = [];
+  const authModes = [
+    { name: 'basic', authorization: `Basic ${basicAuth(email, token)}` },
+    { name: 'bearer', authorization: `Bearer ${token}` },
+  ];
 
   for (const base of bases) {
+    const modes = base.includes('api.atlassian.com') ? authModes : authModes.slice(0, 1);
+    let signedIn = false;
+    let headers: Record<string, string> = {};
+    for (const mode of modes) {
+      headers = {
+        Authorization: mode.authorization,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      };
+      try {
+        await requestJson(`${base}/rest/api/3/myself`, { headers });
+        signedIn = true;
+        break;
+      } catch (error) {
+        const failure = error instanceof Error ? error : new Error('Jira request failed.');
+        if (!isRetryable(failure)) throw failure;
+        const where = base.includes('api.atlassian.com') ? 'Atlassian API' : 'site URL';
+        failures.push(`${where} ${mode.name}: ${failure.message}`);
+      }
+    }
+    if (!signedIn) continue;
     try {
-      await requestJson(`${base}/rest/api/3/myself`, { headers });
       let projects: JiraProject[] = [];
       try {
         projects = await listJiraProjects(base, headers);
@@ -186,13 +205,12 @@ export async function fetchJiraStories(connection: JiraConnection): Promise<Boar
     } catch (error) {
       const failure = error instanceof Error ? error : new Error('Jira request failed.');
       if (!isRetryable(failure)) throw failure;
-      const where = base.includes('api.atlassian.com') ? 'Atlassian API' : 'site URL';
-      failures.push(`${where}: ${failure.message}`);
+      failures.push(failure.message);
     }
   }
 
   throw new Error(
-    `Jira did not accept ${email} for ${origin} (token ${tokenSuffix(token)}, project ${connection.projectKey}). Use an API token from id.atlassian.com with the read:jira-work scope, and the site address https://your-team.atlassian.net. ${failures.join(' ')}`.trim(),
+    `Jira rejected the login for ${email} (token ${tokenSuffix(token)}). Open https://id.atlassian.com/manage-profile/profile and confirm that email is the address on the account. Then create a new API token there, choose ${origin}, include read:jira-work, and paste the full ATATT value into MCP. ${failures.join(' ')}`.trim(),
   );
 }
 
