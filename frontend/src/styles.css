@@ -304,6 +304,54 @@ textarea:focus, input:focus, select:focus {
 .callout ul { margin: 8px 0 0; padding-left: 18px; }
 .snippet .code-block { max-height: none; }
 
+.provider-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.provider {
+  text-align: left;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: var(--shadow);
+}
+.provider strong { font-size: 18px; }
+.provider span { color: var(--muted); font-size: 14px; }
+.provider.active {
+  border-color: var(--orange);
+  box-shadow: inset 0 0 0 1px var(--orange);
+}
+.mcp-form .field + .field { margin-top: 12px; }
+.form-error {
+  margin: 12px 0 0;
+  color: var(--warn);
+  font-weight: 700;
+}
+.connection-summary {
+  margin: 16px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.connection-summary div {
+  background: var(--ok-bg);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.connection-summary dt {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ok);
+  font-weight: 700;
+}
+.connection-summary dd { margin: 4px 0 0; word-break: break-word; }
+
 .toast {
   margin-top: 16px;
   background: var(--navy);
@@ -317,7 +365,8 @@ textarea:focus, input:focus, select:focus {
 @media (max-width: 980px) {
   .app { grid-template-columns: 1fr; }
   .sidebar { height: auto; position: relative; padding-bottom: 16px; }
-  .sidebar nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .sidebar nav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .provider-switch { grid-template-columns: 1fr; }
   .nav-item { align-items: center; text-align: center; padding: 10px 6px; }
   .nav-item small, .brand small, .brand-kicker, .sidebar-foot { display: none; }
   .studio { grid-template-columns: 1fr; }

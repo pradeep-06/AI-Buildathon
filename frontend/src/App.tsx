@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { AGENT_STAGES, PRACTICES, SAMPLE_PROMPTS } from './data';
 import { generateScript } from './lib/generateScript';
 import { HighlightedCode } from './lib/highlight';
-import type { GeneratedScript, ViewId } from './types';
+import { loadConnections, saveConnections } from './mcp';
+import { McpView } from './McpView';
+import type { GeneratedScript, McpConnections, ViewId } from './types';
 
 type PanelId = 'spec' | 'page' | 'config' | 'review';
 
@@ -13,6 +15,7 @@ const NAV: { id: ViewId; label: string; hint: string }[] = [
   { id: 'library', label: 'Scripts', hint: 'Saved flows' },
   { id: 'agents', label: 'Agents', hint: 'Who writes the code' },
   { id: 'practices', label: 'Practices', hint: 'Playwright + TS' },
+  { id: 'mcp', label: 'MCP', hint: 'Jira · Azure' },
 ];
 
 function loadScripts(): GeneratedScript[] {
@@ -51,12 +54,17 @@ export function App() {
   const [stageIndex, setStageIndex] = useState(-1);
   const [notice, setNotice] = useState('');
   const [followUp, setFollowUp] = useState('');
+  const [connections, setConnections] = useState<McpConnections>(() => loadConnections());
 
   const active = scripts.find((script) => script.id === activeId) ?? null;
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(scripts));
   }, [scripts]);
+
+  useEffect(() => {
+    saveConnections(connections);
+  }, [connections]);
 
   useEffect(() => {
     if (!notice) return;
@@ -445,6 +453,11 @@ export function App() {
             </section>
           </main>
         )}
+
+        {view === 'mcp' && (
+          <McpView connections={connections} onChange={setConnections} onNotice={setNotice} />
+        )}
+
         {notice && (
           <div className="toast" role="status">
             {notice}

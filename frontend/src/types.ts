@@ -1,4 +1,26 @@
-export type ViewId = 'studio' | 'library' | 'agents' | 'practices';
+export type ViewId = 'studio' | 'library' | 'agents' | 'practices' | 'mcp';
+
+export type McpProvider = 'jira' | 'azure';
+
+export type JiraConnection = {
+  siteUrl: string;
+  email: string;
+  token: string;
+  projectKey: string;
+  connectedAt: string;
+};
+
+export type AzureConnection = {
+  orgUrl: string;
+  project: string;
+  token: string;
+  connectedAt: string;
+};
+
+export type McpConnections = {
+  jira: JiraConnection | null;
+  azure: AzureConnection | null;
+};
 
 export type ScriptFile = 'spec' | 'page' | 'config';
 
