@@ -54,6 +54,15 @@ function basicAuth(user: string, password: string): string {
   return btoa(binary);
 }
 
+function cleanToken(token: string): string {
+  return token.trim().replace(/^(Bearer|Basic)\s+/i, '');
+}
+
+function tokenSuffix(token: string): string {
+  const value = cleanToken(token);
+  return value.length <= 4 ? '••••' : `••••${value.slice(-4)}`;
+}
+
 async function readError(response: Response): Promise<string> {
   const body = await response.text();
   try {
@@ -87,47 +96,88 @@ function toJiraStory(issue: JiraIssue): BoardStory {
   };
 }
 
-export async function fetchJiraStories(connection: JiraConnection): Promise<BoardStory[]> {
-  const site = connection.siteUrl.replace(/\/$/, '');
-  const headers = {
-    Authorization: `Basic ${basicAuth(connection.email, connection.token)}`,
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-  };
-  let issues: JiraIssue[] = [];
+function isAuthError(error: unknown): boolean {
+  return error instanceof Error && /^401\b|^403\b/.test(error.message);
+}
 
+async function lookupCloudId(origin: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${origin}/_edge/tenant_info`, {
+      headers: { Accept: 'application/json' },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { cloudId?: string };
+    return body.cloudId || null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadJiraIssues(base: string, headers: Record<string, string>, projectKey: string): Promise<JiraIssue[]> {
+  let issues: JiraIssue[] = [];
   try {
     const boards = await requestJson<{ values?: { id: number }[] }>(
-      `${site}/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(connection.projectKey)}&maxResults=1`,
+      `${base}/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&maxResults=1`,
       { headers },
     );
     const boardId = boards.values?.[0]?.id;
     if (boardId) {
       const page = await requestJson<{ issues?: JiraIssue[] }>(
-        `${site}/rest/agile/1.0/board/${boardId}/issue?maxResults=20&fields=summary,description,status,issuetype`,
+        `${base}/rest/agile/1.0/board/${boardId}/issue?maxResults=20&fields=summary,description,status,issuetype`,
         { headers },
       );
       issues = page.issues ?? [];
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : '';
-    if (/^401\b|^403\b/.test(message)) throw new Error(`Jira rejected the connection. ${message}`);
+    if (isAuthError(error)) throw error;
   }
 
-  if (issues.length === 0) {
-    const searched = await requestJson<{ issues?: JiraIssue[] }>(`${site}/rest/api/3/search/jql`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        jql: `project = ${connection.projectKey} ORDER BY updated DESC`,
-        maxResults: 20,
-        fields: ['summary', 'description', 'status', 'issuetype'],
-      }),
-    });
-    issues = searched.issues ?? [];
+  if (issues.length > 0) return issues;
+
+  const searched = await requestJson<{ issues?: JiraIssue[] }>(`${base}/rest/api/3/search/jql`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      jql: `project = ${projectKey} ORDER BY updated DESC`,
+      maxResults: 20,
+      fields: ['summary', 'description', 'status', 'issuetype'],
+    }),
+  });
+  return searched.issues ?? [];
+}
+
+export async function fetchJiraStories(connection: JiraConnection): Promise<BoardStory[]> {
+  const origin = new URL(connection.siteUrl).origin;
+  const email = connection.email.trim();
+  const token = cleanToken(connection.token);
+  const headers = {
+    Authorization: `Basic ${basicAuth(email, token)}`,
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  };
+  const cloudId = await lookupCloudId(origin);
+  const bases = [cloudId ? `https://api.atlassian.com/ex/jira/${cloudId}` : null, origin].filter(
+    (base): base is string => Boolean(base),
+  );
+  const failures: string[] = [];
+
+  for (const base of bases) {
+    try {
+      const issues = await loadJiraIssues(base, headers, connection.projectKey);
+      return issues.map(toJiraStory).filter((story) => story.id || story.key);
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error('Jira request failed.');
+      if (!isAuthError(failure)) throw failure;
+      const where = base.includes('api.atlassian.com') ? 'Atlassian API' : 'site URL';
+      failures.push(`${where}: ${failure.message}`);
+    }
   }
 
-  return issues.map(toJiraStory).filter((story) => story.id || story.key);
+  throw new Error(
+    `Jira did not accept ${email} for ${origin} (token ${tokenSuffix(token)}, project ${connection.projectKey}). Use an API token from id.atlassian.com with the read:jira-work scope, and the site address https://your-team.atlassian.net. ${failures.join(' ')}`.trim(),
+  );
 }
 
 function azureBase(orgUrl: string): { origin: string; org: string } {

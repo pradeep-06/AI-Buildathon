@@ -113,7 +113,10 @@ export function McpView({
         <section className="card mcp-form">
           <div className="section-head">
             <h2>Jira</h2>
-            <p>Use an Atlassian API token from the account that can read the project.</p>
+            <p>
+              Use the Atlassian account email and an API token from id.atlassian.com. The site URL is
+              https://your-team.atlassian.net. A scoped token needs the read:jira-work scope.
+            </p>
           </div>
           <div className="form-row">
             <label className="field">
