@@ -10,14 +10,22 @@ type Step =
   | { kind: 'search'; query: string }
   | { kind: 'click'; target: string }
   | { kind: 'fill'; target: string; value: string }
+  | { kind: 'assert-badge'; count: string }
   | { kind: 'assert'; expectation: string };
 
 const URL_RE = /https?:\/\/[^\s,)]+/i;
 
-function titleFromPrompt(prompt: string): string {
-  const cleaned = prompt.replace(URL_RE, '').replace(/\s+/g, ' ').trim();
-  const slice = cleaned.slice(0, 64).replace(/[,.]$/, '');
-  if (!slice) return 'Generated Playwright flow';
+function titleFromSteps(prompt: string, steps: Step[]): string {
+  const product = steps.find((step) => step.kind === 'add-to-cart');
+  const todo = steps.find((step) => step.kind === 'add-todo');
+  const signsIn = steps.some((step) => step.kind === 'login');
+  if (product && product.kind === 'add-to-cart' && signsIn) return `Sign in and add ${product.product}`;
+  if (product && product.kind === 'add-to-cart') return `Add ${product.product} to the cart`;
+  if (todo && todo.kind === 'add-todo') return `Manage todo: ${todo.text}`;
+  if (signsIn) return 'Sign in and confirm the next page';
+  const cleaned = prompt.replace(URL_RE, ' ').replace(/\s+/g, ' ').replace(/^open\s+/i, '').trim();
+  if (!cleaned) return 'Generated Playwright flow';
+  const slice = cleaned.slice(0, 72).replace(/[,.]$/, '');
   return slice.charAt(0).toUpperCase() + slice.slice(1);
 }
 
@@ -70,6 +78,9 @@ function parseSteps(prompt: string): Step[] {
     if (fill[1] && fill[2]) steps.push({ kind: 'fill', target: fill[1], value: fill[2] });
     else if (fill[3] && fill[4]) steps.push({ kind: 'fill', target: fill[4], value: fill[3] });
   }
+
+  const badge = prompt.match(/badge shows\s+(\d+)/i);
+  if (badge) steps.push({ kind: 'assert-badge', count: badge[1] });
 
   const expectation = prompt.match(/(?:verify|assert|check that|should see)\s+(.+)$/i);
   if (expectation) {
@@ -239,6 +250,11 @@ function buildSpec(options: {
       await page.getByLabel(${quote(step.target)}).fill(${quote(step.value)});
     });`);
     }
+    if (step.kind === 'assert-badge') {
+      body.push(`    await test.step('Verify the cart badge', async () => {
+      await expect(page.locator('[data-test="shopping-cart-badge"]')).toHaveText(${quote(step.count)});
+    });`);
+    }
     if (step.kind === 'assert') {
       const product = steps.find((item) => item.kind === 'add-to-cart');
       const todo = steps.find((item) => item.kind === 'add-todo');
@@ -275,7 +291,7 @@ import { FlowPage } from './flow.page';
  * - Page object for locators and actions
  * - Role and label locators
  * - test.step so the report matches the prompt
- * - expect() instead of waitForTimeout
+ * - Web-first assertions only
  * - Credentials read from the environment
  */
 test.describe(${quote(title)}, () => {
@@ -322,8 +338,12 @@ export default defineConfig({
 `;
 }
 
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+}
+
 export function reviewScript(spec: string, pageObject: string): ReviewCheck[] {
-  const combined = `${spec}\n${pageObject}`;
+  const combined = stripComments(`${spec}\n${pageObject}`);
   return [
     {
       id: 'locators',
@@ -382,7 +402,7 @@ export function generateScript(input: {
     : input.prompt.trim();
   const baseUrl = extractUrl(prompt, input.baseUrl.trim() || 'https://www.saucedemo.com');
   const steps = parseSteps(prompt);
-  const title = input.previous?.title ?? titleFromPrompt(prompt);
+  const title = input.previous?.title ?? titleFromSteps(prompt, steps);
   const spec = buildSpec({ title, prompt, baseUrl, level: input.level, steps });
   const pageObject = buildPageObject(steps);
   const config = buildConfig(baseUrl, input.browser);

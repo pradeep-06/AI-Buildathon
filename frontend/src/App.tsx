@@ -445,12 +445,12 @@ export function App() {
             </section>
           </main>
         )}
+        {notice && (
+          <div className="toast" role="status">
+            {notice}
+          </div>
+        )}
       </div>
-      {notice && (
-        <div className="toast" role="status">
-          {notice}
-        </div>
-      )}
     </div>
   );
 }
