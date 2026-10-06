@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AGENT_STAGES, PRACTICES, SAMPLE_PROMPTS } from './data';
-import { generateScript } from './lib/generateScript';
+import { formatStory, generateScript } from './lib/generateScript';
 import { HighlightedCode } from './lib/highlight';
 import { loadConnections, saveConnections } from './mcp';
 import { McpView } from './McpView';
-import type { GeneratedScript, McpConnections, ViewId } from './types';
+import type { BoardStory, GeneratedScript, McpConnections, McpProvider, ViewId } from './types';
 
 type PanelId = 'spec' | 'page' | 'config' | 'review';
 
@@ -55,6 +55,11 @@ export function App() {
   const [notice, setNotice] = useState('');
   const [followUp, setFollowUp] = useState('');
   const [connections, setConnections] = useState<McpConnections>(() => loadConnections());
+  const [stories, setStories] = useState<BoardStory[]>([]);
+  const [selectedStoryId, setSelectedStoryId] = useState<string | null>(null);
+  const [fetching, setFetching] = useState(false);
+  const [storyError, setStoryError] = useState('');
+  const [boardSource, setBoardSource] = useState<McpProvider>('jira');
 
   const active = scripts.find((script) => script.id === activeId) ?? null;
 
@@ -73,11 +78,49 @@ export function App() {
   }, [notice]);
 
   const passedCount = active?.checks.filter((check) => check.passed).length ?? 0;
+  const canFetch = Boolean(connections.jira || connections.azure);
+  const activeSource: McpProvider = connections.jira && connections.azure ? boardSource : connections.azure && !connections.jira ? 'azure' : 'jira';
+  const selectedStory = stories.find((story) => story.id === selectedStoryId) ?? null;
+
+  function chooseStory(story: BoardStory) {
+    setSelectedStoryId(story.id);
+    setPrompt(formatStory(story));
+  }
+
+  async function fetchStories() {
+    if (!canFetch || fetching) return;
+    setFetching(true);
+    setStoryError('');
+    try {
+      const response = await fetch('/api/stories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: activeSource,
+          jira: connections.jira,
+          azure: connections.azure,
+        }),
+      });
+      const body = (await response.json()) as { stories?: BoardStory[]; error?: string };
+      if (!response.ok || !body.stories) throw new Error(body.error || 'Could not fetch stories.');
+      setStories(body.stories);
+      const first = body.stories[0];
+      if (first) chooseStory(first);
+      else setSelectedStoryId(null);
+      setNotice(body.stories.length ? `Fetched ${body.stories.length} stories.` : 'The board has no stories.');
+    } catch (error) {
+      setStories([]);
+      setSelectedStoryId(null);
+      setStoryError(error instanceof Error ? error.message : 'Could not fetch stories.');
+    } finally {
+      setFetching(false);
+    }
+  }
 
   async function runAgents(mode: 'create' | 'update') {
-    const source = mode === 'update' ? followUp.trim() : prompt.trim();
+    const source = mode === 'update' ? followUp.trim() : prompt.trim() || (selectedStory ? formatStory(selectedStory) : '');
     if (!source) {
-      setNotice('Describe the flow first.');
+      setNotice('Describe the flow or fetch a story first.');
       return;
     }
     if (mode === 'update' && !active) {
@@ -99,6 +142,7 @@ export function App() {
       browser,
       level,
       previous: mode === 'update' ? active ?? undefined : undefined,
+      story: mode === 'create' ? selectedStory ?? undefined : undefined,
     });
     setScripts((current) => {
       const without = current.filter((script) => script.id !== next.id);
@@ -195,6 +239,42 @@ export function App() {
 
         {view === 'studio' && (
           <main className="studio">
+            <section className="stories card" aria-label="Board stories">
+              <div className="section-head">
+                <h2>Board</h2>
+                <p>{selectedStory ? `${selectedStory.key} is selected for the script.` : 'Fetched story details show here.'}</p>
+              </div>
+              {connections.jira && connections.azure && (
+                <label className="field">
+                  <span>Source</span>
+                  <select value={activeSource} onChange={(event) => setBoardSource(event.target.value as McpProvider)}>
+                    <option value="jira">Jira</option>
+                    <option value="azure">Azure</option>
+                  </select>
+                </label>
+              )}
+              {storyError && <p className="form-error">{storyError}</p>}
+              {stories.length === 0 && !storyError && (
+                <p className="story-empty">Fetch a board to list its stories.</p>
+              )}
+              <div className="story-list">
+                {stories.map((story) => {
+                  const selected = story.id === selectedStoryId;
+                  return (
+                    <article key={story.id} className={selected ? 'story selected' : 'story'}>
+                      <button type="button" onClick={() => chooseStory(story)}>
+                        <span>{story.key}</span>
+                        <strong>{story.title}</strong>
+                        <small>{[story.type, story.status].filter(Boolean).join(' · ')}</small>
+                      </button>
+                      {selected && (
+                        <p className="story-detail">{story.description || 'This story has no description.'}</p>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
             <section className="composer card">
               <div className="section-head">
                 <h2>Describe the test</h2>
@@ -239,6 +319,15 @@ export function App() {
                 </label>
               </div>
               <div className="actions">
+                <button
+                  className="btn ghost"
+                  type="button"
+                  onClick={() => void fetchStories()}
+                  disabled={!canFetch || fetching || running}
+                  title={canFetch ? 'Fetch stories from the connected board' : 'Connect Jira or Azure in MCP first'}
+                >
+                  {fetching ? 'Fetching…' : 'Fetch'}
+                </button>
                 <button className="btn primary" type="button" onClick={() => runAgents('create')} disabled={running}>
                   {running ? 'Agents are writing…' : 'Generate script'}
                 </button>
@@ -246,6 +335,7 @@ export function App() {
                   Coding practices
                 </button>
               </div>
+              {!canFetch && <p className="fetch-hint">Connect Jira or Azure in MCP to enable Fetch.</p>}
             </section>
 
             <section className="pipeline card">

@@ -1,4 +1,4 @@
-import type { GeneratedScript, ReviewCheck } from '../types';
+import type { BoardStory, GeneratedScript, ReviewCheck } from '../types';
 
 type Step =
   | { kind: 'open' }
@@ -11,6 +11,7 @@ type Step =
   | { kind: 'click'; target: string }
   | { kind: 'fill'; target: string; value: string }
   | { kind: 'assert-badge'; count: string }
+  | { kind: 'check'; label: string; text: string }
   | { kind: 'assert'; expectation: string };
 
 const URL_RE = /https?:\/\/[^\s,)]+/i;
@@ -93,7 +94,24 @@ function parseSteps(prompt: string): Step[] {
 }
 
 function quote(value: string): string {
-  return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ')}'`;
+}
+
+function stepsFromStory(story: BoardStory): Step[] {
+  const lines = story.description
+    .split(/\n+/)
+    .map((line) => line.replace(/^[-*•]\s*/, '').replace(/\s+/g, ' ').trim())
+    .filter((line) => line.length > 2)
+    .slice(0, 6);
+  const checks = lines.length > 0 ? lines : [story.title];
+  return [
+    { kind: 'open' },
+    ...checks.map((line) => ({
+      kind: 'check' as const,
+      label: line.length > 90 ? `${line.slice(0, 87)}…` : line,
+      text: line.split(' ').slice(0, 8).join(' '),
+    })),
+  ];
 }
 
 function buildPageObject(steps: Step[]): string {
@@ -250,6 +268,11 @@ function buildSpec(options: {
       await page.getByLabel(${quote(step.target)}).fill(${quote(step.value)});
     });`);
     }
+    if (step.kind === 'check') {
+      body.push(`    await test.step(${quote(step.label)}, async () => {
+      await expect(page.getByText(${quote(step.text)}).first()).toBeVisible();
+    });`);
+    }
     if (step.kind === 'assert-badge') {
       body.push(`    await test.step('Verify the cart badge', async () => {
       await expect(page.locator('[data-test="shopping-cart-badge"]')).toHaveText(${quote(step.count)});
@@ -348,8 +371,8 @@ export function reviewScript(spec: string, pageObject: string): ReviewCheck[] {
     {
       id: 'locators',
       label: 'User-facing locators',
-      passed: /getByRole|getByLabel|getByTestId|getByPlaceholder/.test(combined),
-      detail: 'Role, label, or test id locators are present.',
+      passed: /getByRole|getByLabel|getByTestId|getByPlaceholder|getByText/.test(combined),
+      detail: 'Role, label, test id, or text locators are present.',
     },
     {
       id: 'no-sleep',
@@ -390,19 +413,29 @@ export function reviewScript(spec: string, pageObject: string): ReviewCheck[] {
   ];
 }
 
+export function formatStory(story: BoardStory): string {
+  return [`${story.key}: ${story.title}`, story.type && `Type: ${story.type}`, story.status && `Status: ${story.status}`, story.description]
+    .filter((line): line is string => Boolean(line))
+    .join('\n');
+}
+
 export function generateScript(input: {
   prompt: string;
   baseUrl: string;
   browser: string;
   level: string;
   previous?: GeneratedScript;
+  story?: BoardStory;
 }): GeneratedScript {
+  const story = input.previous ? undefined : input.story;
   const prompt = input.previous
     ? `${input.previous.prompt} Update: ${input.prompt}`
-    : input.prompt.trim();
+    : input.prompt.trim() || (story ? formatStory(story) : '');
   const baseUrl = extractUrl(prompt, input.baseUrl.trim() || 'https://www.saucedemo.com');
-  const steps = parseSteps(prompt);
-  const title = input.previous?.title ?? titleFromSteps(prompt, steps);
+  const parsed = parseSteps(prompt);
+  const hasSpecificStep = parsed.some((step) => step.kind !== 'open' && step.kind !== 'assert');
+  const steps = story && !hasSpecificStep ? stepsFromStory(story) : parsed;
+  const title = input.previous?.title ?? (story ? `${story.key} ${story.title}`.slice(0, 72) : titleFromSteps(prompt, steps));
   const spec = buildSpec({ title, prompt, baseUrl, level: input.level, steps });
   const pageObject = buildPageObject(steps);
   const config = buildConfig(baseUrl, input.browser);

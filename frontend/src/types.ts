@@ -46,6 +46,16 @@ export type GeneratedScript = {
   updatedAt: string;
 };
 
+export type BoardStory = {
+  id: string;
+  key: string;
+  title: string;
+  type: string;
+  status: string;
+  description: string;
+  source: McpProvider;
+};
+
 export type AgentStage = {
   id: string;
   name: string;
