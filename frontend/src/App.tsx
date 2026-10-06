@@ -295,18 +295,7 @@ export function App() {
                   placeholder="Open the app, sign in, and verify the landing page."
                 />
               </label>
-              <div className="prompt-chips">
-                {SAMPLE_PROMPTS.map((sample) => (
-                  <button key={sample} type="button" className="chip" onClick={() => setPrompt(sample)}>
-                    {sample.slice(0, 42)}…
-                  </button>
-                ))}
-              </div>
               <div className="form-row">
-                <label className="field">
-                  <span>Base URL</span>
-                  <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
-                </label>
                 <label className="field">
                   <span>Browser</span>
                   <select value={browser} onChange={(event) => setBrowser(event.target.value)}>
