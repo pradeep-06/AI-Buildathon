@@ -5,9 +5,13 @@ export type McpProvider = 'jira' | 'azure';
 export type JiraConnection = {
   siteUrl: string;
   email: string;
-  token: string;
   projectKey: string;
   connectedAt: string;
+  token?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  expiresAt?: string;
+  cloudId?: string;
 };
 
 export type AzureConnection = {

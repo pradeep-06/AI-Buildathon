@@ -4,7 +4,7 @@ import { formatStory, generateScript } from './lib/generateScript';
 import { HighlightedCode } from './lib/highlight';
 import { loadConnections, saveConnections } from './mcp';
 import { McpView } from './McpView';
-import type { BoardStory, GeneratedScript, McpConnections, McpProvider, ViewId } from './types';
+import type { BoardStory, GeneratedScript, JiraConnection, McpConnections, McpProvider, ViewId } from './types';
 
 type PanelId = 'spec' | 'page' | 'config' | 'review';
 
@@ -42,7 +42,7 @@ function fileName(file: Exclude<PanelId, 'review'>): string {
 }
 
 export function App() {
-  const [view, setView] = useState<ViewId>('studio');
+  const [view, setView] = useState<ViewId>(() => (sessionStorage.getItem('tgs-open-view') === 'mcp' ? 'mcp' : 'studio'));
   const [scripts, setScripts] = useState<GeneratedScript[]>(() => loadScripts());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState(SAMPLE_PROMPTS[0]);
@@ -52,7 +52,12 @@ export function App() {
   const [panel, setPanel] = useState<PanelId>('spec');
   const [running, setRunning] = useState(false);
   const [stageIndex, setStageIndex] = useState(-1);
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState(() => {
+    const message = sessionStorage.getItem('tgs-mcp-notice') ?? '';
+    sessionStorage.removeItem('tgs-mcp-notice');
+    sessionStorage.removeItem('tgs-open-view');
+    return message;
+  });
   const [followUp, setFollowUp] = useState('');
   const [connections, setConnections] = useState<McpConnections>(() => loadConnections());
   const [stories, setStories] = useState<BoardStory[]>([]);
@@ -101,8 +106,9 @@ export function App() {
           azure: connections.azure,
         }),
       });
-      const body = (await response.json()) as { stories?: BoardStory[]; error?: string };
+      const body = (await response.json()) as { stories?: BoardStory[]; error?: string; jira?: JiraConnection };
       if (!response.ok || !body.stories) throw new Error(body.error || 'Could not fetch stories.');
+      if (body.jira) setConnections((current) => ({ ...current, jira: body.jira ?? current.jira }));
       setStories(body.stories);
       const first = body.stories[0];
       if (first) chooseStory(first);

@@ -1,4 +1,5 @@
 import type { AzureConnection, BoardStory, JiraConnection, McpProvider } from '../src/types';
+import { fetchJiraOauthStories } from './jiraOauth';
 
 type StoryRequest = {
   provider?: McpProvider;
@@ -345,7 +346,7 @@ function isAuthFailure(error: unknown): boolean {
 export async function fetchJiraStories(connection: JiraConnection): Promise<BoardStory[]> {
   const origin = new URL(connection.siteUrl).origin;
   const email = connection.email.trim();
-  const token = cleanToken(connection.token).replace(/\s+/g, '');
+  const token = cleanToken(connection.token || '').replace(/\s+/g, '');
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token)) {
     throw new StoryRequestError(
       'The API token field has this site’s cloud id, not an API token. Open id.atlassian.com, create an API token, and paste the value that starts with ATATT.',
@@ -443,11 +444,12 @@ export async function fetchAzureStories(connection: AzureConnection): Promise<Bo
   }));
 }
 
-export async function fetchBoardStories(body: StoryRequest): Promise<BoardStory[]> {
+export async function fetchBoardStories(body: StoryRequest): Promise<{ stories: BoardStory[]; jira?: JiraConnection }> {
   if (body.provider === 'azure') {
     if (!body.azure) throw new Error('Connect Azure in MCP before fetching stories.');
-    return fetchAzureStories(body.azure);
+    return { stories: await fetchAzureStories(body.azure) };
   }
   if (!body.jira) throw new Error('Connect Jira in MCP before fetching stories.');
-  return fetchJiraStories(body.jira);
+  if (body.jira.accessToken) return fetchJiraOauthStories(body.jira);
+  throw new StoryRequestError('The saved API token cannot be used. Open MCP and click Connect Jira to sign in with Atlassian.', 401);
 }

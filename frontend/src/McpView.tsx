@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { maskSecret, validateAzure, validateJira } from './mcp';
-import type { AzureConnection, JiraConnection, McpConnections, McpProvider } from './types';
+import type { AzureConnection, McpConnections, McpProvider } from './types';
 
-type JiraDraft = Omit<JiraConnection, 'connectedAt'>;
+type JiraDraft = { siteUrl: string; projectKey: string };
 type AzureDraft = Omit<AzureConnection, 'connectedAt'>;
 
-const EMPTY_JIRA: JiraDraft = { siteUrl: '', email: '', token: '', projectKey: '' };
+const EMPTY_JIRA: JiraDraft = { siteUrl: '', projectKey: '' };
 const EMPTY_AZURE: AzureDraft = { orgUrl: '', project: '', token: '' };
 
 export function McpView({
@@ -18,7 +18,10 @@ export function McpView({
   onNotice: (message: string) => void;
 }) {
   const [provider, setProvider] = useState<McpProvider>('jira');
-  const [jira, setJira] = useState<JiraDraft>(connections.jira ?? EMPTY_JIRA);
+  const [jira, setJira] = useState<JiraDraft>({
+    siteUrl: connections.jira?.siteUrl ?? '',
+    projectKey: connections.jira?.projectKey ?? '',
+  });
   const [azure, setAzure] = useState<AzureDraft>(connections.azure ?? EMPTY_AZURE);
   const [error, setError] = useState('');
 
@@ -30,8 +33,6 @@ export function McpView({
   function connectJira() {
     const draft = {
       siteUrl: jira.siteUrl.trim(),
-      email: jira.email.trim(),
-      token: jira.token.trim(),
       projectKey: jira.projectKey.trim().toUpperCase(),
     };
     const problem = validateJira(draft);
@@ -39,13 +40,8 @@ export function McpView({
       setError(problem);
       return;
     }
-    onChange({
-      ...connections,
-      jira: { ...draft, connectedAt: new Date().toISOString() },
-    });
-    setJira(draft);
-    setError('');
-    onNotice('Jira MCP connection saved.');
+    const params = new URLSearchParams({ siteUrl: draft.siteUrl, projectKey: draft.projectKey });
+    window.location.assign(`/api/jira/connect?${params.toString()}`);
   }
 
   function connectAzure() {
@@ -114,9 +110,8 @@ export function McpView({
           <div className="section-head">
             <h2>Jira</h2>
             <p>
-              Use the Atlassian account email and the full API token from id.atlassian.com. It starts with ATATT.
-              The site URL is https://your-team.atlassian.net. For a scoped token, choose this Jira site and include
-              read:jira-work.
+              Enter the Jira site and project key, then click Connect Jira. Atlassian opens so you can sign in and
+              approve Automation Studio. The sign-in is saved in this browser for the next fetch.
             </p>
           </div>
           <div className="form-row">
@@ -134,37 +129,15 @@ export function McpView({
               <input
                 value={jira.projectKey}
                 onChange={(event) => setJira({ ...jira, projectKey: event.target.value.toUpperCase() })}
-                placeholder="QA"
+                placeholder="AVENGERS"
                 autoComplete="off"
-              />
-            </label>
-          </div>
-          <div className="form-row">
-            <label className="field">
-              <span>Email</span>
-              <input
-                type="email"
-                value={jira.email}
-                onChange={(event) => setJira({ ...jira, email: event.target.value })}
-                placeholder="you@teksystems.com"
-                autoComplete="off"
-              />
-            </label>
-            <label className="field">
-              <span>API token</span>
-              <input
-                type="password"
-                value={jira.token}
-                onChange={(event) => setJira({ ...jira, token: event.target.value })}
-                placeholder="ATATT… from id.atlassian.com"
-                autoComplete="new-password"
               />
             </label>
           </div>
           {error && <p className="form-error">{error}</p>}
           <div className="actions">
             <button className="btn primary" type="button" onClick={connectJira}>
-              {jiraLive ? 'Update Jira connection' : 'Connect Jira'}
+              {jiraLive?.accessToken ? 'Reconnect Jira' : 'Connect Jira'}
             </button>
             {jiraLive && (
               <button className="btn ghost" type="button" onClick={() => disconnect('jira')}>
@@ -176,7 +149,7 @@ export function McpView({
             <dl className="connection-summary">
               <div>
                 <dt>Status</dt>
-                <dd>Saved for the Jira MCP server</dd>
+                <dd>{jiraLive.accessToken ? 'Signed in with Atlassian' : 'Saved API token. Connect again to sign in.'}</dd>
               </div>
               <div>
                 <dt>Site</dt>
@@ -184,11 +157,11 @@ export function McpView({
               </div>
               <div>
                 <dt>Account</dt>
-                <dd>{jiraLive.email}</dd>
+                <dd>{jiraLive.email || 'Available after sign-in'}</dd>
               </div>
               <div>
-                <dt>Token</dt>
-                <dd>{maskSecret(jiraLive.token)}</dd>
+                <dt>Project</dt>
+                <dd>{jiraLive.projectKey}</dd>
               </div>
             </dl>
           )}

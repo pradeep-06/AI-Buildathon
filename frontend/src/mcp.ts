@@ -1,4 +1,4 @@
-import type { AzureConnection, JiraConnection, McpConnections } from './types';
+import type { AzureConnection, McpConnections } from './types';
 
 export const MCP_STORAGE_KEY = 'tgs-mcp-connections-v1';
 
@@ -27,7 +27,7 @@ export function maskSecret(value: string): string {
   return `••••${value.slice(-4)}`;
 }
 
-export function validateJira(input: Omit<JiraConnection, 'connectedAt'>): string | null {
+export function validateJira(input: { siteUrl: string; projectKey: string }): string | null {
   let site: URL;
   try {
     site = new URL(input.siteUrl.trim());
@@ -35,16 +35,8 @@ export function validateJira(input: Omit<JiraConnection, 'connectedAt'>): string
     return 'Enter a full Jira site URL, including https://.';
   }
   if (site.protocol !== 'https:') return 'Jira site URL must start with https://.';
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())) return 'Enter the Atlassian account email.';
-  const token = input.token.trim();
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token)) {
-    return 'That value is the site cloud id, not an API token. Create a token at id.atlassian.com. It starts with ATATT.';
-  }
-  if (token.length < 20 || !token.startsWith('ATATT')) {
-    return 'Paste the API token from id.atlassian.com. It is a long value that starts with ATATT, not your password or the site id.';
-  }
-  if (!/^[A-Z][A-Z0-9_]+$/.test(input.projectKey.trim())) {
-    return 'Project key should look like QA or BUILD.';
+  if (!/^[A-Z][A-Z0-9_]+$/.test(input.projectKey.trim().toUpperCase())) {
+    return 'Project key should look like AVENGERS. It is the code in front of the issue number.';
   }
   return null;
 }
