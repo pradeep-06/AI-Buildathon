@@ -66,3 +66,15 @@ export type AgentStage = {
   role: string;
   detail: string;
 };
+
+export type AgentFileKind = 'rule' | 'skill' | 'command';
+
+export type AgentFile = {
+  id: string;
+  kind: AgentFileKind;
+  name: string;
+  fileName: string;
+  body: string;
+  agentId?: string;
+  updatedAt: string;
+};

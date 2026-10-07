@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { applyAgentFiles, loadAgentFiles, saveAgentFiles } from './agents';
+import { AgentsView } from './AgentsView';
 import { AGENT_STAGES, PRACTICES, SAMPLE_PROMPTS } from './data';
 import { formatStory, generateScript } from './lib/generateScript';
 import { HighlightedCode } from './lib/highlight';
@@ -66,6 +68,7 @@ export function App() {
   const [storyError, setStoryError] = useState('');
   const [boardSource, setBoardSource] = useState<McpProvider>('jira');
   const [selectedScriptIds, setSelectedScriptIds] = useState<string[]>([]);
+  const [agentFiles, setAgentFiles] = useState(() => loadAgentFiles());
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   const active = scripts.find((script) => script.id === activeId) ?? null;
@@ -77,6 +80,10 @@ export function App() {
   useEffect(() => {
     saveConnections(connections);
   }, [connections]);
+
+  useEffect(() => {
+    saveAgentFiles(agentFiles);
+  }, [agentFiles]);
 
   useEffect(() => {
     if (!selectAllRef.current) return;
@@ -144,7 +151,7 @@ export function App() {
     setRunning(true);
     setView('studio');
     setPanel('spec');
-    for (let index = 0; index < AGENT_STAGES.length; index += 1) {
+    for (let index = 0; index < stages.length; index += 1) {
       setStageIndex(index);
       await new Promise((resolve) => window.setTimeout(resolve, 420));
     }
@@ -162,7 +169,7 @@ export function App() {
       return [next, ...without];
     });
     setActiveId(next.id);
-    setStageIndex(AGENT_STAGES.length);
+    setStageIndex(stages.length);
     setRunning(false);
     setFollowUp('');
     setNotice(mode === 'update' ? 'Script updated from your follow-up.' : 'Playwright script is ready.');
@@ -189,7 +196,7 @@ export function App() {
     setLevel(script.level);
     setPanel('spec');
     setView('studio');
-    setStageIndex(AGENT_STAGES.length);
+    setStageIndex(stages.length);
   }
 
   const codePanel: Exclude<PanelId, 'review'> = panel === 'review' ? 'spec' : panel;
@@ -213,11 +220,12 @@ export function App() {
   }
 
   const libraryCount = scripts.length;
+  const stages = useMemo(() => applyAgentFiles(AGENT_STAGES, agentFiles), [agentFiles]);
   const stageLabel = useMemo(() => {
-    if (running && stageIndex >= 0 && stageIndex < AGENT_STAGES.length) return AGENT_STAGES[stageIndex].name;
+    if (running && stageIndex >= 0 && stageIndex < stages.length) return stages[stageIndex].name;
     if (active) return 'Review complete';
     return 'Waiting for a prompt';
-  }, [active, running, stageIndex]);
+  }, [active, running, stageIndex, stages]);
 
   return (
     <div className="app">
@@ -359,7 +367,7 @@ export function App() {
                 <p>Four agents share one script. This preview runs them in the browser.</p>
               </div>
               <ol>
-                {AGENT_STAGES.map((stage, index) => {
+                {stages.map((stage, index) => {
                   const done = stageIndex > index;
                   const current = running && stageIndex === index;
                   return (
@@ -573,35 +581,7 @@ export function App() {
           </main>
         )}
 
-        {view === 'agents' && (
-          <main className="page">
-            <div className="section-head">
-              <h2>The agents</h2>
-              <p>
-                The studio is the front door. Next, these same roles can run on a backend and write files into the
-                repo. Today they show the contract: prompt in, typed Playwright out.
-              </p>
-            </div>
-            <div className="agent-grid">
-              {AGENT_STAGES.map((stage, index) => (
-                <article key={stage.id} className="card agent-card">
-                  <span className="stage-index light">{index + 1}</span>
-                  <h3>{stage.name}</h3>
-                  <p className="role">{stage.role}</p>
-                  <p>{stage.detail}</p>
-                </article>
-              ))}
-            </div>
-            <section className="card callout">
-              <h3>What the backend will own</h3>
-              <ul>
-                <li>Persist prompts and script versions for the team, not only this browser.</li>
-                <li>Call the agents with the repo’s page objects so updates extend existing files.</li>
-                <li>Run the generated spec and return the Playwright trace when it fails.</li>
-              </ul>
-            </section>
-          </main>
-        )}
+        {view === 'agents' && <AgentsView files={agentFiles} onChange={setAgentFiles} onNotice={setNotice} />}
 
         {view === 'practices' && (
           <main className="page">
