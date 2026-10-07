@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AGENT_STAGES, PRACTICES, SAMPLE_PROMPTS } from './data';
 import { formatStory, generateScript } from './lib/generateScript';
 import { HighlightedCode } from './lib/highlight';
@@ -65,6 +65,8 @@ export function App() {
   const [fetching, setFetching] = useState(false);
   const [storyError, setStoryError] = useState('');
   const [boardSource, setBoardSource] = useState<McpProvider>('jira');
+  const [selectedScriptIds, setSelectedScriptIds] = useState<string[]>([]);
+  const selectAllRef = useRef<HTMLInputElement>(null);
 
   const active = scripts.find((script) => script.id === activeId) ?? null;
 
@@ -75,6 +77,11 @@ export function App() {
   useEffect(() => {
     saveConnections(connections);
   }, [connections]);
+
+  useEffect(() => {
+    if (!selectAllRef.current) return;
+    selectAllRef.current.indeterminate = selectedScriptIds.length > 0 && selectedScriptIds.length < scripts.length;
+  }, [scripts.length, selectedScriptIds, view]);
 
   useEffect(() => {
     if (!notice) return;
@@ -159,6 +166,19 @@ export function App() {
     setRunning(false);
     setFollowUp('');
     setNotice(mode === 'update' ? 'Script updated from your follow-up.' : 'Playwright script is ready.');
+  }
+
+  function toggleScript(id: string) {
+    setSelectedScriptIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  }
+
+  function deleteScripts(ids: string[]) {
+    const remove = new Set(ids);
+    if (remove.size === 0) return;
+    setScripts((current) => current.filter((script) => !remove.has(script.id)));
+    setSelectedScriptIds((current) => current.filter((id) => !remove.has(id)));
+    setActiveId((current) => (current && remove.has(current) ? null : current));
+    setNotice(remove.size === 1 ? 'Script deleted.' : `${remove.size} scripts deleted.`);
   }
 
   function openScript(script: GeneratedScript) {
@@ -446,9 +466,21 @@ export function App() {
 
         {view === 'library' && (
           <main className="page">
-            <div className="section-head">
-              <h2>Saved scripts</h2>
-              <p>Every generate and update is kept in this browser so you can reopen a flow.</p>
+            <div className="section-head script-head">
+              <div>
+                <h2>Saved scripts</h2>
+                <p>Every generate and update is kept in this browser so you can reopen a flow.</p>
+              </div>
+              {scripts.length > 0 && (
+                <button
+                  className="btn ghost danger"
+                  type="button"
+                  disabled={selectedScriptIds.length === 0}
+                  onClick={() => deleteScripts(selectedScriptIds)}
+                >
+                  Delete selected{selectedScriptIds.length ? ` (${selectedScriptIds.length})` : ''}
+                </button>
+              )}
             </div>
             {scripts.length === 0 ? (
               <div className="card empty-page">
@@ -462,20 +494,67 @@ export function App() {
                 <table className="script-table">
                   <thead>
                     <tr>
+                      <th className="select-col">
+                        <input
+                          ref={selectAllRef}
+                          type="checkbox"
+                          checked={scripts.length > 0 && selectedScriptIds.length === scripts.length}
+                          aria-label="Select all scripts"
+                          onChange={() =>
+                            setSelectedScriptIds((current) => (current.length === scripts.length ? [] : scripts.map((script) => script.id)))
+                          }
+                        />
+                      </th>
+                      <th>Action</th>
                       <th>Script</th>
                       <th>Prompt</th>
                       <th>Level</th>
                       <th>Browser</th>
                       <th>Updated</th>
                       <th>Checks</th>
-                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {scripts.map((script) => {
                       const passed = script.checks.filter((check) => check.passed).length;
+                      const selected = selectedScriptIds.includes(script.id);
                       return (
-                        <tr key={script.id}>
+                        <tr key={script.id} className={selected ? 'selected' : ''}>
+                          <td className="select-col">
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              aria-label={`Select ${script.title}`}
+                              onChange={() => toggleScript(script.id)}
+                            />
+                          </td>
+                          <td>
+                            <div className="row-actions">
+                              <button
+                                className="icon-btn"
+                                type="button"
+                                aria-label={`Open ${script.title} in studio`}
+                                title="Open in studio"
+                                onClick={() => openScript(script)}
+                              >
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                  <path d="M14 5h5v5h-2V8.4l-6.3 6.3-1.4-1.4L15.6 7H14V5z" />
+                                  <path d="M6 7h5v2H8v9h9v-3h2v5H6V7z" />
+                                </svg>
+                              </button>
+                              <button
+                                className="icon-btn danger"
+                                type="button"
+                                aria-label={`Delete ${script.title}`}
+                                title="Delete"
+                                onClick={() => deleteScripts([script.id])}
+                              >
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                  <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v8h-2V9zm4 0h2v8h-2V9zM7 9h2v8H7V9z" />
+                                </svg>
+                              </button>
+                            </div>
+                          </td>
                           <td className="script-title">{script.title}</td>
                           <td className="script-prompt">{script.prompt}</td>
                           <td>{script.level}</td>
@@ -483,20 +562,6 @@ export function App() {
                           <td>{new Date(script.updatedAt).toLocaleString()}</td>
                           <td>
                             {passed}/{script.checks.length}
-                          </td>
-                          <td>
-                            <button
-                              className="icon-btn"
-                              type="button"
-                              aria-label={`Open ${script.title} in studio`}
-                              title="Open in studio"
-                              onClick={() => openScript(script)}
-                            >
-                              <svg viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="M14 5h5v5h-2V8.4l-6.3 6.3-1.4-1.4L15.6 7H14V5z" />
-                                <path d="M6 7h5v2H8v9h9v-3h2v5H6V7z" />
-                              </svg>
-                            </button>
                           </td>
                         </tr>
                       );

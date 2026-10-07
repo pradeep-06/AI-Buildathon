@@ -369,7 +369,14 @@ textarea:focus, input:focus, select:focus {
   background: #f7fafc;
 }
 .script-table tr:last-child td { border-bottom: 0; }
-.script-table tbody tr:hover { background: #fff8f0; }
+.script-table tbody tr:hover,
+.script-table tbody tr.selected { background: #fff8f0; }
+.script-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+.select-col { width: 44px; }
+.select-col input { width: 16px; height: 16px; accent-color: var(--orange); }
+.row-actions { display: flex; gap: 6px; }
+.btn.danger, .icon-btn.danger { color: #9a3412; }
+.icon-btn.danger:hover { border-color: #9a3412; background: #fff1e4; }
 .script-title { font-weight: 700; color: var(--navy); overflow-wrap: anywhere; }
 .script-prompt {
   max-width: 320px;
