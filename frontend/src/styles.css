@@ -352,7 +352,44 @@ textarea:focus, input:focus, select:focus {
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 14px;
 }
-.script-card p, .agent-card p { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.agent-card p { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.script-table-wrap { overflow: auto; padding: 0; }
+.script-table { width: 100%; border-collapse: collapse; min-width: 720px; }
+.script-table th, .script-table td {
+  text-align: left;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.script-table th {
+  color: var(--navy);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: #f7fafc;
+}
+.script-table tr:last-child td { border-bottom: 0; }
+.script-table tbody tr:hover { background: #fff8f0; }
+.script-title { font-weight: 700; color: var(--navy); overflow-wrap: anywhere; }
+.script-prompt {
+  max-width: 320px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--navy);
+}
+.icon-btn:hover { border-color: var(--orange); background: #fff8f0; }
+.icon-btn svg { width: 18px; height: 18px; fill: currentColor; }
 .card-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 13px; margin: 8px 0 12px; }
 .role { color: var(--orange-deep) !important; font-weight: 700; margin-top: 0; }
 .callout ul { margin: 8px 0 0; padding-left: 18px; }

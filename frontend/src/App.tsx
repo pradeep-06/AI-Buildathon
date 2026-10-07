@@ -458,23 +458,51 @@ export function App() {
                 </button>
               </div>
             ) : (
-              <div className="script-grid">
-                {scripts.map((script) => (
-                  <article key={script.id} className="card script-card">
-                    <p className="eyebrow">{script.level} · {script.browser}</p>
-                    <h3>{script.title}</h3>
-                    <p>{script.prompt}</p>
-                    <div className="card-meta">
-                      <span>{new Date(script.updatedAt).toLocaleString()}</span>
-                      <span>
-                        {script.checks.filter((check) => check.passed).length}/{script.checks.length} checks
-                      </span>
-                    </div>
-                    <button className="btn primary" type="button" onClick={() => openScript(script)}>
-                      Open in studio
-                    </button>
-                  </article>
-                ))}
+              <div className="card script-table-wrap">
+                <table className="script-table">
+                  <thead>
+                    <tr>
+                      <th>Script</th>
+                      <th>Prompt</th>
+                      <th>Level</th>
+                      <th>Browser</th>
+                      <th>Updated</th>
+                      <th>Checks</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scripts.map((script) => {
+                      const passed = script.checks.filter((check) => check.passed).length;
+                      return (
+                        <tr key={script.id}>
+                          <td className="script-title">{script.title}</td>
+                          <td className="script-prompt">{script.prompt}</td>
+                          <td>{script.level}</td>
+                          <td>{script.browser}</td>
+                          <td>{new Date(script.updatedAt).toLocaleString()}</td>
+                          <td>
+                            {passed}/{script.checks.length}
+                          </td>
+                          <td>
+                            <button
+                              className="icon-btn"
+                              type="button"
+                              aria-label={`Open ${script.title} in studio`}
+                              title="Open in studio"
+                              onClick={() => openScript(script)}
+                            >
+                              <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M14 5h5v5h-2V8.4l-6.3 6.3-1.4-1.4L15.6 7H14V5z" />
+                                <path d="M6 7h5v2H8v9h9v-3h2v5H6V7z" />
+                              </svg>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </main>
